@@ -1,5 +1,9 @@
 # OWASP SaaS Hardening Guide
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![OWASP Top 10](https://img.shields.io/badge/OWASP-Top%2010%20(2021)-brightgreen.svg)](https://owasp.org/Top10/)
+[![Stack: Node.js + React](https://img.shields.io/badge/stack-Node.js%20%2B%20React-blue.svg)](#stack-assumed)
+
 > Practical, code-first walkthroughs of the OWASP Top 10 (2021) for a Node.js + Express + React + PostgreSQL SaaS. Every risk is paired with a vulnerable example, the fix, and a test that proves the fix works.
 
 This isn't a theory dump. It's the working notebook I built while hardening the [Forsman CRM](https://github.com/batuhan-satilmis/forsman-crm-showcase) and several client SaaS engagements. Each chapter is scoped to a single OWASP category and contains:
