@@ -52,18 +52,6 @@ The patterns generalize, but examples are concrete.
 | A09 | Security Logging & Monitoring Failures | [09-logging-monitoring.md](./chapters/09-logging-monitoring.md) |
 | A10 | Server-Side Request Forgery | [10-ssrf.md](./chapters/10-ssrf.md) |
 
-## Companion code
-
-Every code example referenced here is also runnable from [`/examples`](./examples/). Each chapter has its own folder with `vulnerable.ts`, `secure.ts`, and `*.test.ts`.
-
-```bash
-cd examples/01-broken-access-control
-npm install
-npm test
-```
-
----
-
 ## Companion repos
 
 - 🛡️ [**forsman-crm-showcase**](https://github.com/batuhan-satilmis/forsman-crm-showcase) — production application of these controls.
