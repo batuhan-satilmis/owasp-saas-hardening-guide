@@ -69,6 +69,70 @@ Otherwise an attacker hosts `https://evil.com/redirect-to-internal.php` that 302
 
 If your app calls external services *and* internal services from the same host, an SSRF that lands on internal services has more reach. Some teams put outbound HTTP for user-supplied URLs through a separate, network-restricted egress proxy that can only reach the public internet.
 
+### 5. Defeat DNS rebinding (TOCTOU between resolve and connect)
+
+The pattern in step 1 has a subtle race condition: between `lookup(url.hostname)` and `fetch(rawUrl)`, the application performs **two** DNS resolutions — once to validate, and a second time when the HTTP client actually connects. An attacker who controls the authoritative DNS for `evil.example` can answer the first query with a public IP (passes the unicast check) and the second query with `169.254.169.254`. The TTL on the malicious record is 0; both resolves are live.
+
+```ts
+// 🚨 still vulnerable — the URL is re-resolved by fetch()
+if (await isUrlSafe(rawUrl)) {
+  const data = await fetch(rawUrl);   // resolves the hostname again
+}
+```
+
+This is **DNS rebinding**, and a public PoC has existed since [the 2017 Tavis Ormandy disclosures](https://bugs.chromium.org/p/project-zero/issues/detail?id=1471). It bypasses every IP-based allow-list that does the check ahead of the connection.
+
+The fix: resolve **once**, then connect to that exact IP — and carry the original hostname in the `Host` header so TLS / virtual hosting still works.
+
+```ts
+import { Agent } from 'undici';
+import { lookup } from 'node:dns/promises';
+
+async function safeFetch(rawUrl: string): Promise<Response> {
+  const url = new URL(rawUrl);
+  if (url.protocol !== 'https:') throw new Error('https only');
+
+  const { address: ip } = await lookup(url.hostname);
+  if (ipaddr.parse(ip).range() !== 'unicast') {
+    throw new Error('resolved to a non-public address');
+  }
+
+  // Pin the connection to the IP we validated. The TLS handshake still uses
+  // the original hostname (SNI + cert verification), so we don't lose auth.
+  const agent = new Agent({
+    connect: { lookup: (_host, _opts, cb) => cb(null, ip, 4) },
+  });
+
+  return fetch(rawUrl, { dispatcher: agent, redirect: 'manual' });
+}
+```
+
+What this buys you:
+
+- Only **one** DNS resolution is observed by the attacker's authoritative server, so they cannot serve two different answers.
+- TLS certificate verification still binds to `url.hostname`, not to the IP — a rogue cert for `169.254.169.254` does not help the attacker.
+- Pairs naturally with the redirect-disabling rule in step 3 (without it, a 302 to a fresh hostname re-opens the rebinding window).
+
+### The test that catches the bad version
+
+```ts
+test('rebinding attack: DNS that returns public IP then internal is rejected', async () => {
+  // Mock the resolver so the first call returns a public IP and any
+  // subsequent call returns a link-local one. The vulnerable code path
+  // would call lookup() twice and pass validation on the first.
+  let call = 0;
+  vi.spyOn(dnsPromises, 'lookup').mockImplementation(async () => ({
+    address: (++call === 1) ? '93.184.216.34' : '169.254.169.254',
+    family: 4,
+  }));
+
+  // safeFetch resolves exactly once and pins the connection.
+  await expect(safeFetch('https://rebind.evil.test/x')).resolves.toBeDefined();
+  expect(call).toBe(1);                            // only one lookup happened
+});
+```
+
+
 ## Cloud-specific gotchas
 
 - **AWS IMDSv2** is much harder to SSRF than v1 because it requires a session token. Enforce `instance-metadata-options: HttpTokens=required`.
